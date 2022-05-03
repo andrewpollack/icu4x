@@ -4,9 +4,10 @@
 
 //! This module contains types and implementations for the Buddhist calendar
 
-use crate::iso::{Iso, IsoDateInner, IsoDay, IsoMonth, IsoYear};
-use crate::{types, Calendar, Date, DateDuration, DateDurationUnit, DateTime, DateTimeError};
+use crate::iso::{Iso, IsoYear};
+use crate::{types, ArithmeticDate, Calendar, CalendarArithmetic, Date, DateDuration, DateDurationUnit, DateTime, DateTimeError};
 use core::convert::TryInto;
+use core::marker::PhantomData;
 use tinystr::tinystr;
 
 /// The number of years the Buddhist Era is ahead of C.E. by
@@ -14,7 +15,7 @@ use tinystr::tinystr;
 /// (1 AD = 544 BE)
 const BUDDHIST_ERA_OFFSET: i32 = 543;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Hash, Default, Eq, PartialEq)]
 /// The [Thai Solar Buddhist Calendar][cal]
 ///
 /// This is basically the same as the Gregorian calendar,
@@ -24,9 +25,41 @@ const BUDDHIST_ERA_OFFSET: i32 = 543;
 #[allow(clippy::exhaustive_structs)] // this type is stable
 pub struct Buddhist;
 
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+// The inner date type used for representing Date<Buddhist>
+pub struct BuddhistDateInner(ArithmeticDate<Buddhist>);
+
+impl CalendarArithmetic for Buddhist {
+    fn month_days(year: i32, month: u8) -> u8 {
+        // TODO
+        if (1..=12).contains(&month) {
+            30
+        } else if month == 13 {
+            if Self::is_leap_year(year) {
+                6
+            } else {
+                5
+            }
+        } else {
+            0
+        }
+    }
+
+    fn months_for_every_year() -> u8 {
+        // TODO
+        13
+    }
+
+    fn is_leap_year(year: i32) -> bool {
+        // TODO
+        year % 4 == 3
+    }
+}
+
 impl Calendar for Buddhist {
-    type DateInner = IsoDateInner;
-    fn date_from_iso(&self, iso: Date<Iso>) -> IsoDateInner {
+    type DateInner = BuddhistDateInner;
+    fn date_from_iso(&self, iso: Date<Iso>) -> BuddhistDateInner {
+        // TODO: create a `buddhist_from_fixed` and call from here
         *iso.inner()
     }
 
@@ -96,35 +129,45 @@ impl Calendar for Buddhist {
     }
 }
 
+impl Buddhist {
+    /// Construct a new Buddhist Calendar
+    pub fn new() -> Self {
+        Self
+    }
+}
+
 impl Date<Buddhist> {
     /// Construct a new Buddhist Date.
     ///
     /// Years are specified as BE years.
     ///
     /// ```rust
-    /// use icu::calendar::{Date,
-    ///                     iso::IsoYear,
-    ///                     iso::IsoMonth,
-    ///                     iso::IsoDay};
-    /// use std::convert::TryFrom;
+    /// use icu::calendar::Date;
     ///
-    /// let iso_year = IsoYear(1970);
-    /// let iso_month = IsoMonth::try_from(1).unwrap();
-    /// let iso_day = IsoDay::try_from(2).unwrap();
-    ///
-    /// // Conversion from ISO to Buddhist
-    /// let date_buddhist = Date::new_buddhist_date(iso_year, iso_month, iso_day).unwrap();
+    /// let date_buddhist = Date::new_buddhist_date_from_integers(2513, 1, 2).unwrap();
     ///
     /// assert_eq!(date_buddhist.year().number, 2513);
     /// assert_eq!(date_buddhist.month().number, 1);
     /// assert_eq!(date_buddhist.day_of_month().0, 2);
     /// ```
-    pub fn new_buddhist_date(
-        year: IsoYear,
-        month: IsoMonth,
-        day: IsoDay,
+    pub fn new_buddhist_date_from_integers(
+        year: i32,
+        month: u8,
+        day: u8,
     ) -> Result<Date<Buddhist>, DateTimeError> {
-        Date::new_iso_date(year, month, day).map(|d| Date::new_from_iso(d, Buddhist))
+        let inner = ArithmeticDate {
+            year,
+            month,
+            day,
+            marker: PhantomData,
+        };
+
+        let bound = inner.days_in_month();
+        if day > bound {
+            return Err(DateTimeError::OutOfRange);
+        }
+
+        Ok(Date::from_raw(BuddhistDateInner(inner), Buddhist))
     }
 }
 
